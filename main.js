@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import fs from 'node:fs';
 import http from 'node:http';
 
+// ---------- 1. Параметри командного рядка ----------
 const program = new Command();
 
 program
@@ -23,6 +24,10 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
   process.exit(1);
 }
 
+// ---------- 2. Обробка даних ----------
+
+// Перетворює значення на число. Число в рядку ("305880") теж стає числом.
+// Відсутнє, null, порожнє чи нечислове значення → null.
 function toNumber(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -32,12 +37,14 @@ function toNumber(value) {
   return null;
 }
 
+// Текстове поле: обрізаємо пробіли; відсутнє, null або порожній рядок → null.
 function toText(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
   return text === '' ? null : text;
 }
 
+// Розбирає вміст файлу: JSON-масив (починається з "[") або NDJSON (об'єкт на рядок).
 function parseData(text) {
   const content = text.replace(/^\uFEFF/, '').trim();
   if (content.startsWith('[')) {
@@ -49,6 +56,7 @@ function parseData(text) {
     .map((line) => JSON.parse(line));
 }
 
+// Варіант 1: фільтр normal (COD_STATE === 1) і поля mfo_code, name, state_code.
 function processRecords(records, flags) {
   const result = [];
   for (const record of records) {
@@ -65,12 +73,16 @@ function processRecords(records, flags) {
   return result;
 }
 
+// ---------- 3. Відповідь клієнту ----------
+
+// Відправляє готове тіло відповіді клієнту з правильним заголовком.
 function send(req, res, statusCode, body) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(body);
   console.log(`${req.method} ${req.url} -> ${statusCode}`);
 }
 
+// Формує JSON; якщо задано --output, спершу записує його у файл, а вже потім відправляє.
 function reply(req, res, statusCode, payload) {
   const body = JSON.stringify(payload, null, 2);
 
@@ -89,6 +101,8 @@ function reply(req, res, statusCode, payload) {
   });
 }
 
+// ---------- 4. Обробник запиту ----------
+
 function handleRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
 
@@ -97,11 +111,13 @@ function handleRequest(req, res) {
     return;
   }
 
+  // Прапорець увімкнено лише при значенні рівно "true"
   const flags = {
     mfo: url.searchParams.get('mfo') === 'true',
     normal: url.searchParams.get('normal') === 'true',
   };
 
+  // Файл читається заново при кожному запиті — асинхронно, через колбек (error-first)
   fs.readFile(options.input, 'utf8', (err, text) => {
     if (err) {
       const message = err.code === 'ENOENT'
@@ -137,6 +153,9 @@ function handleRequest(req, res) {
   });
 }
 
+// ---------- 5. Запуск сервера ----------
+
+// Обгортка: синхронна помилка в обробнику не зупиняє сервер, а дає код 500
 const server = http.createServer((req, res) => {
   try {
     handleRequest(req, res);
@@ -148,6 +167,7 @@ const server = http.createServer((req, res) => {
   }
 });
 
+// Помилка запуску (порт зайнятий, неіснуюча адреса тощо)
 server.on('error', (err) => {
   console.error(`Не вдалося запустити сервер на ${options.host}:${port} (${err.code})`);
   process.exit(1);
