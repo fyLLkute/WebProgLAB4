@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import fs from 'node:fs';
 
 const program = new Command();
 
@@ -14,3 +15,17 @@ program
 program.parse();
 
 const options = program.opts();
+const port = Number(options.port);
+
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  console.error(`Помилка: порт має бути цілим числом від 0 до 65535, отримано "${options.port}"`);
+  process.exit(1);
+}
+
+fs.access(options.input, fs.constants.F_OK, (err) => {
+  if (err) {
+    console.error('Cannot find input file');
+    process.exit(1);
+  }
+  console.log('Файл даних знайдено:', options.input); // тимчасово, до кроку 6
+});
