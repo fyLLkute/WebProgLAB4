@@ -104,15 +104,54 @@ function handleRequest(req, res) {
 
   fs.readFile(options.input, 'utf8', (err, text) => {
     if (err) {
-      reply(req, res, 500, { error: 'Не вдалося прочитати файл даних' });
+      const message = err.code === 'ENOENT'
+        ? `Файл даних "${options.input}" не знайдено`
+        : `Не вдалося прочитати файл даних (${err.code})`;
+      reply(req, res, 500, { error: message });
       return;
     }
-    const result = processRecords(parseData(text), flags);
+
+    let records;
+    try {
+      records = parseData(text);
+    } catch {
+      reply(req, res, 500, { error: `Файл даних "${options.input}" пошкоджений: це не коректний JSON/NDJSON` });
+      return;
+    }
+
+    if (!Array.isArray(records)) {
+      reply(req, res, 500, { error: 'Файл даних має містити масив об\'єктів' });
+      return;
+    }
+
+    let result;
+    try {
+      result = processRecords(records, flags);
+    } catch (processErr) {
+      console.error(processErr);
+      reply(req, res, 500, { error: 'Помилка під час обробки даних' });
+      return;
+    }
+
     reply(req, res, 200, result);
   });
 }
 
-const server = http.createServer(handleRequest);
+const server = http.createServer((req, res) => {
+  try {
+    handleRequest(req, res);
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) {
+      reply(req, res, 500, { error: 'Внутрішня помилка сервера' });
+    }
+  }
+});
+
+server.on('error', (err) => {
+  console.error(`Не вдалося запустити сервер на ${options.host}:${port} (${err.code})`);
+  process.exit(1);
+});
 
 fs.access(options.input, fs.constants.F_OK, (err) => {
   if (err) {
