@@ -23,20 +23,93 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
   process.exit(1);
 }
 
+function toNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value.trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function toText(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text === '' ? null : text;
+}
+
+function parseData(text) {
+  const content = text.replace(/^\uFEFF/, '').trim();
+  if (content.startsWith('[')) {
+    return JSON.parse(content);
+  }
+  return content
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+}
+
+function processRecords(records, flags) {
+  const result = [];
+  for (const record of records) {
+    if (record === null || typeof record !== 'object') continue;
+    const stateCode = toNumber(record.COD_STATE);
+    if (flags.normal && stateCode !== 1) continue;
+
+    const item = {};
+    if (flags.mfo) item.mfo_code = toNumber(record.MFO);
+    item.name = toText(record.SHORTNAME);
+    item.state_code = stateCode;
+    result.push(item);
+  }
+  return result;
+}
+
 function send(req, res, statusCode, body) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(body);
   console.log(`${req.method} ${req.url} -> ${statusCode}`);
 }
 
+function reply(req, res, statusCode, payload) {
+  const body = JSON.stringify(payload, null, 2);
+
+  if (!options.output) {
+    send(req, res, statusCode, body);
+    return;
+  }
+
+  fs.writeFile(options.output, body, 'utf8', (err) => {
+    if (err) {
+      const message = `Не вдалося записати відповідь у файл "${options.output}" (${err.code})`;
+      send(req, res, 500, JSON.stringify({ error: message }, null, 2));
+      return;
+    }
+    send(req, res, statusCode, body);
+  });
+}
+
 function handleRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
 
   if (url.pathname !== '/') {
-    send(req, res, 404, JSON.stringify({ error: `Маршрут ${url.pathname} не знайдено. Доступний лише маршрут /` }, null, 2));
+    reply(req, res, 404, { error: `Маршрут ${url.pathname} не знайдено. Доступний лише маршрут /` });
     return;
   }
-  send(req, res, 200, JSON.stringify({ message: 'Сервер працює' })); // тимчасово, до кроку 7
+
+  const flags = {
+    mfo: url.searchParams.get('mfo') === 'true',
+    normal: url.searchParams.get('normal') === 'true',
+  };
+
+  fs.readFile(options.input, 'utf8', (err, text) => {
+    if (err) {
+      reply(req, res, 500, { error: 'Не вдалося прочитати файл даних' });
+      return;
+    }
+    const result = processRecords(parseData(text), flags);
+    reply(req, res, 200, result);
+  });
 }
 
 const server = http.createServer(handleRequest);
