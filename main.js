@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import fs from 'node:fs';
+import http from 'node:http';
 
 const program = new Command();
 
@@ -22,10 +23,30 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
   process.exit(1);
 }
 
+function send(req, res, statusCode, body) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(body);
+  console.log(`${req.method} ${req.url} -> ${statusCode}`);
+}
+
+function handleRequest(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+
+  if (url.pathname !== '/') {
+    send(req, res, 404, JSON.stringify({ error: `Маршрут ${url.pathname} не знайдено. Доступний лише маршрут /` }, null, 2));
+    return;
+  }
+  send(req, res, 200, JSON.stringify({ message: 'Сервер працює' })); // тимчасово, до кроку 7
+}
+
+const server = http.createServer(handleRequest);
+
 fs.access(options.input, fs.constants.F_OK, (err) => {
   if (err) {
     console.error('Cannot find input file');
     process.exit(1);
   }
-  console.log('Файл даних знайдено:', options.input); // тимчасово, до кроку 6
+  server.listen(port, options.host, () => {
+    console.log(`Сервер запущено: http://${options.host}:${port}/`);
+  });
 });
