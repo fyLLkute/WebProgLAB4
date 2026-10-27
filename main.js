@@ -111,6 +111,13 @@ function handleRequest(req, res) {
     return;
   }
 
+    // Дозволені лише GET і HEAD: сервер тільки віддає дані
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
+    reply(req, res, 405, { error: `Метод ${req.method} не підтримується. Дозволено: GET, HEAD` });
+    return;
+  }
+  
   // Прапорець увімкнено лише при значенні рівно "true"
   const flags = {
     mfo: url.searchParams.get('mfo') === 'true',
